@@ -1,0 +1,361 @@
+library(tidyverse)
+library(survival)
+library(rms)
+library(ggplot2)
+library(ggpubr)
+library(magrittr)
+library(survminer)
+library(KMsurv)
+library(OIsurv) #Aumatically loads KM surv
+library(ranger)
+library(muhaz)
+library(ggfortify) ##autoplot()
+library(dplyr)
+library(Hmisc)
+library(RDCOMClient)
+library(RODBC)
+
+
+#Call Data from data warehouse
+close(cn)
+cn=odbcDriverConnect("driver={SQL};
+            server=XXX ;database=DB;trusted_connection=yes;")
+db=sqlQuery(cn, "select * from  DB ", as.is=TRUE)
+
+
+#######Some data cleaning
+db1$URM.=as.character(ifelse(db1$URM=="not",0,ifelse(db1$URM=="URM", 1, NA)))
+
+######################Very important filter we want to have students in calendar of 2007 start date not before 
+#and they have 3 years to graduate and they should take minimum 12 credits or more
+db1=db[db$`# COMP CRED` >=12 & db$FirstTerm_StartDate<="2014-09-02 00:00:00.000",]
+
+pip=db$STATUS+1
+plot(db$minAgeDeg,db$TIME,pch=(pip), xlab = "Minmum Age When Get Degree", ylab="Time (Number of Days)")
+legend(60,3800,c("Censor=1","Censor=0"),pch=(pip))
+
+
+#sfit First plot in presentation/first  KP curve S(t)=1-P(t<=T)=P(t=>T)
+fit=npsurv(Surv(db1$TIME, db1$STATUS, type='right')~ 1, data=db1)
+par(mfrow=c(1,3))
+plot(fit,col="light blue", lwd=3, xlab='Time (Number of Days)',xlim=c(0,4000),ylab="1 - Probability (Completion)",mark.time=TRUE,
+     cex.axis=1.5,cex.main=1.5,cex.lab=1.5,conf.int=TRUE, font.x = c(18, "bold.italic", "black"),          
+     font.y = c(18, "bold.italic", "black"))
+title("Kaplan-Meier Curve Graduated & Transferred Students in 4000 Days")
+plot(fit,col="coral", lwd=2, xlab='Time (Number of Days)',xlim=c(0,2000),ylab="1 - Probability (Completion)" ,mark.time=TRUE,
+     cex.axis=1.5,cex.main=1.5,cex.lab=1.5,conf.int=TRUE, font.x = c(18, "bold.italic", "black"),          
+     font.y = c(18, "bold.italic", "black"))
+title("Kaplan-Meier Curve Graduated & Transferred Students in 2000 Days")
+
+
+summary(fit)
+
+
+############## Comparing Cumulative Hazards S(t)=1-P(t<=T)=P(t=>T)
+fit=fit[fit$time<=2000]
+h.hat=-log(fit$surv)
+h.hat=c(h.hat,tail(h.hat,1))
+h.sort.of=fit$n.event/fit$n.risk
+h.tilde=cumsum(h.sort.of)
+
+plot(c(fit$time,2000),h.hat,type="s",xlab='Time (Number of Days)', ylab="Probability (Completion)", lwd=3,
+     col='dark blue',cex.axis=1.5,cex.main=1.5,cex.lab=1.5, ylim = c(0,1), xlim=c(0,2000), font.x = c(18, "bold.italic", "black"),          
+     font.y = c(18, "bold.italic", "black"))
+title("Cumulative Curve Graduated & Transferred Students")
+
+points(c(fit$time, 2000), h.tilde, lty=2, type="s")
+
+par(mfrow=c(1,1))
+survdiff(Surv(db1$TIME,db1$STATUS)~1,rho=0.5)
+
+#######################################################
+########################################################################
+############################################### KP Estimation Graduation of AA/AS  and BA/MA
+########################################################################
+
+ggsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$Graduation_AA_AS_BA, data=db1)
+          ,xlim=c(0,2000),risk.table = TRUE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)",fontsize = 28
+          ,palette = c("#E7B800", "#034f84","#a2b9bc","#d64161"),break.y.by = .05
+          ,legend.title = "Graduation and Transfer Type", legend.labs = c("0-0","0-4","2-0","2-4")
+          ,conf.int.style = "step",surv.median.line = "hv"# , conf.int = TRUE
+          ,pval=TRUE,mark.time=TRUE,risk.table.height=.2,break.time.by=100,ggtheme = theme_minimal()
+          ,title = "Survival Curves of Graduated & Transferred Students to Higher Education Level")
+
+ggsurv=ggpar(
+  ggsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+ ggsurv$table <- ggpar(
+   ggsurv$table,
+   font.title    = c(13, "bold.italic", "black"),
+   font.x        = c(14, "bold.italic", "black"),
+   font.y        = c(10, "bold.italic", "black"),
+   font.xtickslab = c(9, "bold", "red")
+ )
+ print(ggsurv)
+ ###############################################################################
+ ################ Kaplan Meier for Placement Type in General English/Math/Reading
+############################################################################
+ pgsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$`Placment Gen`, data=db1)
+                   ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                   ,palette = c( "#034f84","#82b74b" )
+                   ,legend.title = "Placement Type" , legend.labs = c("Others","Placement Test")
+                   ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                   ,title = "Survival Curves of Placement Level in Math")
+ 
+pgsurv=ggpar(
+  pgsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+
+print(pgsurv)
+
+###########################################################################
+#######################################   Kaplan Meier for MATH Placement
+###########################################################################
+
+Tgsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$MathLevel, data=db1)
+                  ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                  ,palette = c("#E7B800", "#034f84","#82b74b","#454140","#c1502e" )
+                  ,legend.title = "Math Placement Level", legend.labs = c("-1","-2","-3","-4","0")
+                  ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                  ,title = "Survival Curves of Placement Level in Math")
+
+Tgsurv=ggpar(
+  Tgsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(Tgsurv)
+                         #############*********** Cumulative curve for Math Placement**********##############
+
+tgfit=npsurv(Surv(db1$TIME, db1$STATUS, type='right')~db1$MathLevel, data=db1)
+
+tgfit=tgfit[tgfit$time<=2000,]
+h.hat=-log(tgfit$surv)
+h.hat=c(h.hat,tail(h.hat,1))
+h.sort.of=tgfit$n.event/tgfit$n.risk
+h.tilde=cumsum(h.sort.of)
+
+plot(c(tgfit$time,4000),h.hat,type="s",xlab='Time (Number of Days)', ylab="Probability (Completion)", lwd=3,
+     col=c("yellow", "red","blue","green","coral" ),
+     cex.axis=1.5,cex.main=1.5,cex.lab=1.5, ylim = c(0,1), xlim=c(0,4000), font.x = c(18, "bold.italic", "black"),          
+     font.y = c(18, "bold.italic", "black"))
+title("Cumulative Curve ")
+
+points(c(fit$time, 2000), h.tilde, lty=2, type="s")
+
+par(mfrow=c(1,1))
+survdiff(Surv(db1$TIME,db1$STATUS)~1,rho=0.5)
+
+###############################################################################
+#######################################   Kaplan Meier for English Placement
+###############################################################################
+
+egsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$EnglLevel, data=db1)
+                  ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                  ,palette = c( "#82b74b","#034f84","#454140","#c1502e" )
+                  ,legend.title = "English Placement Level", legend.labs = c("-1","-2","-3","0")
+                  ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                  ,title = "Survival Curves of Placement Level in English")
+
+egsurv=ggpar(
+  egsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(egsurv)
+
+#####################################################################
+################################# Kaplan Meier for GENDER
+#####################################################################
+Gggsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$GENDER, data=db1)
+                   ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                   ,palette = c( "#034f84","#E7B800" )
+                   ,legend.title = "GENDER", legend.labs = c("Female","Male")
+                   ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                   ,title = "Survival Curves for Gender")
+Gggsurv=ggpar(
+  Gggsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(Gggsurv)
+#####################################################################
+################################# Kaplan Meier for first Generation
+#####################################################################
+fggsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$FirstGen, data=db1)
+                  ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                  ,palette = c("#E7B800", "#034f84" )
+                  ,legend.title = "First Generation", legend.labs = c("No","Yes")
+                  ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                  ,title = "Survival Curves of First Generation")
+fggsurv=ggpar(
+  fggsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(fggsurv)
+##############################################################################
+###################### Kaplan Meier Estimation for going to Pulic & Private School 
+############################################################################
+stgsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$`School Type`, data=db1)
+                   ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)"
+                   ,palette = c("#E7B800", "#034f84" )
+                   ,legend.title = "Higher Education School Type" , legend.labs = c("Private","Public")
+                   ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                   ,title = "Survival Curves of Type of School in Higher Education BA/MA")
+stgsurv=ggpar(
+  stgsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(stgsurv)
+########################################################################
+########################################## Kaplan Meier Estimation for financial aid
+########################################################################
+fagsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$`Financial Aid`, data=db1)
+                   ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)"
+                   ,palette = c( "#034f84","#E7B800" )
+                   ,legend.title = "Financial Aid Status" , legend.labs = c("No","Yes")
+                   ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                   ,title = "Survival Curves of Financial Aid")
+fagsurv=ggpar(
+  fagsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(fagsurv)
+
+########################################################################
+########################################## Kaplan Meier Estimation for URM 
+########################################################################
+uagsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$URM., data=db1)
+                   ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)"
+                  # ,palette = c( "#034f84","#E7B800" ,"#c1502e")
+                   ,legend.title = "URM" , legend.labs = c("No","Yes")
+                   ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                   ,title = "KP Curve of Underrepresented Minorities")
+uagsurv=ggpar(
+  uagsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(uagsurv)
+
+###########################################################################
+#######################################   Kaplan Meier Estimation for Fulltimers
+###########################################################################
+
+fgsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$FullTimeCat, data=db1)
+                  ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                  ,palette = c( "#82b74b","#034f84","#c1502e" )
+                  ,legend.title = "Full Time Category", legend.labs = c("High Full-Time/More than 75%","Low Full-Time/Less than 35% ","Half Full-Time/35%-75%")
+                  ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                  ,title = "Survival Curves of Full Time Status")
+
+fgsurv=ggpar(
+  fgsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(fgsurv)
+
+###################################################################
+#######################################   Kaplan Meier for Withdraw
+###################################################################
+
+wsurv=ggsurvplot(survfit(Surv(db1$TIME, db1$STATUS, type='right')~db1$Withdraw, data=db1)
+                  ,xlim=c(0,2000),risk.table = FALSE,xlab="Time(Number of Days)",ylab ="1 - Probability (Completion)" 
+                  ,palette = c("#E7B800", "#034f84","#82b74b","#454140","#c1502e" )
+                  ,legend.title = "Number of Withdraw", legend.labs = c("More Than 4","None","One","Three", "Two")
+                  ,pval=TRUE,mark.time=TRUE,break.time.by=90,break.y.by = 0.05,ggtheme = theme_minimal()
+                  ,title = "Survival Curves of Number of Times that Students Withdraw")
+
+wsurv=ggpar(
+  wsurv,
+  font.title    = c(20, "bold", "darkblue"),         
+  font.legend  = c(18, "bold.italic", "black"), 
+  #font.caption  = c(14, "plain", "orange"),        
+  font.x        = c(18, "bold.italic", "black"),          
+  font.y        = c(18, "bold.italic", "black"),      
+  font.xtickslab = c(18, "bold", "darkgreen"),
+  legend = "top"
+)
+print(wsurv)
+##############################################################
+####################### Accelerated failure time modeling (Parameteric Analysis)
+#############################################################
+library(SurvRegCensCov)
+wr=WeibullReg(Surv(db1$TIME,db1$STATUS)~as.factor(db1$`Success Math Trans`)+as.factor(db1$Withdraw)+db1$`Financial Aid`
+           +as.factor(db1$GENDER)+as.factor(db1$FullTimeCat)+db1$URM.+as.factor(db1$MathLevel)+as.factor(db1$EnglLevel)
+           , data=db1)
+
+plot(wr$coef)
+##########################################################
+### Non-parameteric regression analysis
+#############################################################
+# checking assumption of cox reg with PH
+fit=coxph(Surv(db1$TIME,db1$STATUS)~db1$`Success Math Trans`+db1$Withdraw+db1$`Financial Aid`
+          +db1$GENDER+db1$FullTimeCat+db1$URM+db1$MathLevel+db1$EnglLevel, data=db1)
+tp=cox.zph(fit)
+print(tp)
+par(mfrow=c(3,4))
+plot(tp)
+
+
+
+
+
