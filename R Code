@@ -30,27 +30,15 @@ db1$URM.=as.character(ifelse(db1$URM=="not",0,ifelse(db1$URM=="URM", 1, NA)))
 #and they have 3 years to graduate and they should take minimum 12 credits or more
 db1=db[db$`# COMP CRED` >=12 & db$FirstTerm_StartDate<="2014-09-02 00:00:00.000",]
 
-pip=db$STATUS+1
-plot(db$minAgeDeg,db$TIME,pch=(pip), xlab = "Minmum Age When Get Degree", ylab="Time (Number of Days)")
-legend(60,3800,c("Censor=1","Censor=0"),pch=(pip))
-
 
 #sfit First plot in presentation/first  KP curve S(t)=1-P(t<=T)=P(t=>T)
 fit=npsurv(Surv(db1$TIME, db1$STATUS, type='right')~ 1, data=db1)
-par(mfrow=c(1,3))
-plot(fit,col="light blue", lwd=3, xlab='Time (Number of Days)',xlim=c(0,4000),ylab="1 - Probability (Completion)",mark.time=TRUE,
-     cex.axis=1.5,cex.main=1.5,cex.lab=1.5,conf.int=TRUE, font.x = c(18, "bold.italic", "black"),          
-     font.y = c(18, "bold.italic", "black"))
-title("Kaplan-Meier Curve Graduated & Transferred Students in 4000 Days")
+par(mfrow=c(1,2))
 plot(fit,col="coral", lwd=2, xlab='Time (Number of Days)',xlim=c(0,2000),ylab="1 - Probability (Completion)" ,mark.time=TRUE,
      cex.axis=1.5,cex.main=1.5,cex.lab=1.5,conf.int=TRUE, font.x = c(18, "bold.italic", "black"),          
      font.y = c(18, "bold.italic", "black"))
 title("Kaplan-Meier Curve Graduated & Transferred Students in 2000 Days")
-
-
 summary(fit)
-
-
 ############## Comparing Cumulative Hazards S(t)=1-P(t<=T)=P(t=>T)
 fit=fit[fit$time<=2000]
 h.hat=-log(fit$surv)
@@ -62,11 +50,8 @@ plot(c(fit$time,2000),h.hat,type="s",xlab='Time (Number of Days)', ylab="Probabi
      col='dark blue',cex.axis=1.5,cex.main=1.5,cex.lab=1.5, ylim = c(0,1), xlim=c(0,2000), font.x = c(18, "bold.italic", "black"),          
      font.y = c(18, "bold.italic", "black"))
 title("Cumulative Curve Graduated & Transferred Students")
-
-points(c(fit$time, 2000), h.tilde, lty=2, type="s")
-
 par(mfrow=c(1,1))
-survdiff(Surv(db1$TIME,db1$STATUS)~1,rho=0.5)
+
 
 #######################################################
 ########################################################################
@@ -144,26 +129,6 @@ Tgsurv=ggpar(
   legend = "top"
 )
 print(Tgsurv)
-                         #############*********** Cumulative curve for Math Placement**********##############
-
-tgfit=npsurv(Surv(db1$TIME, db1$STATUS, type='right')~db1$MathLevel, data=db1)
-
-tgfit=tgfit[tgfit$time<=2000,]
-h.hat=-log(tgfit$surv)
-h.hat=c(h.hat,tail(h.hat,1))
-h.sort.of=tgfit$n.event/tgfit$n.risk
-h.tilde=cumsum(h.sort.of)
-
-plot(c(tgfit$time,4000),h.hat,type="s",xlab='Time (Number of Days)', ylab="Probability (Completion)", lwd=3,
-     col=c("yellow", "red","blue","green","coral" ),
-     cex.axis=1.5,cex.main=1.5,cex.lab=1.5, ylim = c(0,1), xlim=c(0,4000), font.x = c(18, "bold.italic", "black"),          
-     font.y = c(18, "bold.italic", "black"))
-title("Cumulative Curve ")
-
-points(c(fit$time, 2000), h.tilde, lty=2, type="s")
-
-par(mfrow=c(1,1))
-survdiff(Surv(db1$TIME,db1$STATUS)~1,rho=0.5)
 
 ###############################################################################
 #######################################   Kaplan Meier for English Placement
@@ -354,6 +319,14 @@ tp=cox.zph(fit)
 print(tp)
 par(mfrow=c(3,4))
 plot(tp)
+
+#################### COX model
+my.surv=Surv(db1$TIME,db1$STATUS)
+coxph.fit=coxph(my.surv~as.factor(db1$Withdraw)+db1$`Financial Aid`
+                +as.factor(db1$GENDER)+as.factor(db1$FullTimeCat)+as.factor(db1$EnglLeve)
+                +db1$URM.+as.factor(db1$MathLeve)
+                ,method="efron") # other opitons "breslow" and "exact" and "efron"
+summary(coxph.fit)
 
 
 
